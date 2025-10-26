@@ -3,7 +3,7 @@ dist/
 gesture_recognizer.spec
 
 *.xml
-.idea
+.idea/
 
 # Default ignored files
 /shelf/

@@ -1,3 +1,4 @@
+from mediapipe.python.solutions.drawing_utils import DrawingSpec
 from mediapipe.tasks.python.vision.gesture_recognizer import GestureRecognizer, GestureRecognizerOptions, \
 	GestureRecognizerResult
 import mediapipe as mp
@@ -15,21 +16,17 @@ GESTURE = None
 import sys
 import os
 
+
 def resource_path(relative_path):
 	"""Get absolute path to resource, works for dev and for PyInstaller bundle"""
-	if hasattr(sys, '_MEIPASS'):
-		# Running in a PyInstaller bundle
-		return os.path.join(sys._MEIPASS, relative_path)
-	# Running in normal Python
-	return os.path.join(os.path.abspath("."), relative_path)
-
+	return (os.path.join(sys._MEIPASS, relative_path)
+			if hasattr(sys, '_MEIPASS')
+			else os.path.join(os.path.abspath("."), relative_path))
 
 
 def print_result(result, output_image, timestamp_ms):
 	global RESULT
-	global GESTURE
 	RESULT = result
-	GESTURE = result.gestures[0][0].category_name if result.gestures else 'Mogging'
 
 
 # print("Gesture recognition result:", result)
@@ -39,21 +36,19 @@ options = GestureRecognizerOptions(
 	base_options=BaseOptions(model_asset_path=resource_path('assets/gesture_recognizer.task')),
 	running_mode=VisionTaskRunningMode.LIVE_STREAM,
 	num_hands=2,
-	min_tracking_confidence=0.6,
-	min_hand_detection_confidence=0.3,
-	min_hand_presence_confidence=0.3,
+	min_tracking_confidence=0.4,
+	min_hand_detection_confidence=0.7,
+	min_hand_presence_confidence=0.6,
 	result_callback=print_result)
-
-# @markdown We implemented some functions to visualize the hand landmark detection results. <br/> Run the following cell to activate the functions.
-
 
 MARGIN = 5  # pixels
 FONT_SIZE = 0.75
 FONT_THICKNESS = 2
-HANDEDNESS_TEXT_COLOR = (0,0,0)
+HANDEDNESS_TEXT_COLOR = (0, 0, 0)
 WINDOW_WIDTH = 720
 WINDOW_HEIGHT = 450
 EMOJI_WINDOW_SIZE = (WINDOW_WIDTH, WINDOW_HEIGHT)
+
 
 def draw_landmarks_on_image(rgb_image, detection_result):
 	hand_landmarks_list = detection_result.hand_landmarks
@@ -75,8 +70,8 @@ def draw_landmarks_on_image(rgb_image, detection_result):
 			annotated_image,
 			hand_landmarks_proto,
 			solutions.hands.HAND_CONNECTIONS,
-			solutions.drawing_styles.get_default_hand_landmarks_style(),
-			solutions.drawing_styles.get_default_hand_connections_style())
+			DrawingSpec(color=(0, 255, 240)),
+			DrawingSpec(color=(0, 255, 240)))
 		
 		# Get the top left corner of the detected hand's bounding box.
 		height, width, _ = annotated_image.shape
@@ -84,12 +79,12 @@ def draw_landmarks_on_image(rgb_image, detection_result):
 		y_coordinates = [landmark.y for landmark in hand_landmarks]
 		text_x = int(min(x_coordinates) * width)
 		text_y = int(min(y_coordinates) * height) - MARGIN
-		
-		# Draw handedness (left or right hand) on the image.
-		sign = gesture[idx][0] if gesture[idx] else ''
-		cv2.putText(annotated_image, f"{handedness[0].category_name}:{sign.category_name if sign else ''}",
-					(text_x, text_y), cv2.FONT_HERSHEY_DUPLEX,
-					FONT_SIZE, HANDEDNESS_TEXT_COLOR, FONT_THICKNESS, cv2.LINE_AA)
+	
+	# Draw handedness (left or right hand) on the image.
+	# 	sign = gesture[idx][0] if gesture[idx] else ''
+	# 	cv2.putText(annotated_image, f"{handedness[0].category_name}:{sign.category_name if sign else ''}",
+	# 				(text_x, text_y), cv2.FONT_HERSHEY_DUPLEX,
+	# 				FONT_SIZE, HANDEDNESS_TEXT_COLOR, FONT_THICKNESS, cv2.LINE_AA)
 	
 	return annotated_image
 
@@ -99,7 +94,10 @@ try:
 	thumbs_down_emoji = cv2.imread(str(resource_path("assets/thumbs down.png")))
 	mog_emoji = cv2.imread(str(resource_path("assets/mog.png")))
 	thumbs_up_emoji = cv2.imread(str(resource_path("assets/thumbs up.png")))
-
+	fours_emoji = cv2.imread(str(resource_path("assets/fours.png")))
+	shy_emoji = cv2.imread(str(resource_path(
+		"assets/shy.jpg")))
+	
 	if nerd_emoji is None:
 		raise FileNotFoundError("nerd.png not found")
 	if thumbs_down_emoji is None:
@@ -108,7 +106,11 @@ try:
 		raise FileNotFoundError("mog.png not found")
 	if thumbs_up_emoji is None:
 		raise FileNotFoundError("thumbs up.png not found")
-
+	if fours_emoji is None:
+		raise FileNotFoundError("fours.png not found")
+	if shy_emoji is None:
+		raise FileNotFoundError("shy.jpg not found")
+	
 	# Resize emojis
 	nerd_emoji = cv2.resize(nerd_emoji, EMOJI_WINDOW_SIZE)
 	mog_emoji = cv2.resize(mog_emoji, EMOJI_WINDOW_SIZE)
@@ -155,8 +157,6 @@ with GestureRecognizer.create_from_options(options) as recognizer:
 		image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 		image.flags.writeable = False
 		
-		current_state = 'Mogging'
-		
 		frame_np = np.array(image)
 		timestamp = int(round(time.time() * 1000))
 		mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image)
@@ -167,18 +167,37 @@ with GestureRecognizer.create_from_options(options) as recognizer:
 		image.flags.writeable = True
 		image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 		
-		# Render the processed images
+		gesture = None
 		if RESULT:
+			if RESULT.gestures and RESULT.gestures[0][0].category_name != 'None':
+				gesture = RESULT.gestures[0][0].category_name
+			else:
+				if RESULT.hand_landmarks:
+					if len(RESULT.hand_landmarks) == 1:
+						index, thumb_tip, pink = RESULT.hand_landmarks[0][5], RESULT.hand_landmarks[0][4], \
+							RESULT.hand_landmarks[0][17]
+						if (index.x <= thumb_tip.x <= pink.x) or (index.x >= thumb_tip.x >= pink.x):
+							gesture = 'Fours'
+					elif len(RESULT.hand_landmarks) == 2:
+						index1, index2, thumb1, thumb2 = RESULT.hand_landmarks[0][8], RESULT.hand_landmarks[1][8], \
+							RESULT.hand_landmarks[0][4], RESULT.hand_landmarks[1][4]
+						# print(abs(index1.x - index2.x), abs(thumb1.y - thumb2.y))
+						if abs(index1.x - index2.x) <= 0.05 and abs(thumb1.y - thumb2.y) <= 0.05:
+							gesture = 'Shy'
 			image = draw_landmarks_on_image(image, RESULT)
-		
-		if GESTURE == 'Pointing_Up':
-			emoji_to_display = nerd_emoji
-		elif GESTURE == 'Thumb_Up':
-			emoji_to_display = thumbs_up_emoji
-		elif GESTURE == 'Thumb_Down':
-			emoji_to_display = thumbs_down_emoji
-		elif current_state == 'Mogging':
-			emoji_to_display = mog_emoji
+		match gesture:
+			case 'Pointing_Up':
+				emoji_to_display = nerd_emoji
+			case 'Thumb_Up':
+				emoji_to_display = thumbs_up_emoji
+			case 'Thumb_Down':
+				emoji_to_display = thumbs_down_emoji
+			case 'Fours':
+				emoji_to_display = fours_emoji
+			case 'Shy':
+				emoji_to_display = shy_emoji
+			case _:
+				emoji_to_display = mog_emoji
 		
 		camera_frame_resized = cv2.resize(image, (WINDOW_WIDTH, WINDOW_HEIGHT))
 		cv2.putText(camera_frame_resized, 'Press "q" to quit', (10, WINDOW_HEIGHT - 20),
